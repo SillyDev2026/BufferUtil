@@ -3,17 +3,30 @@
 
 --[[
     created by SillyDev2026
-	Buffer Utility Module
+    Buffer Utility Module (Luau / Roblox)
 
-	Purpose:
-	- Provide fast, low-level helpers for working with Roblox buffers
-	- Support typed reads/writes (ints + floats)
-	- Support sequential cursor-based access
-	- Support compiled layouts (struct-like usage)
-	- No bounds checks, no safety nets (caller is responsible)
+    Purpose:
+    - Provide fast, low-level helpers for working with Roblox buffers
+    - Support typed reads/writes (i8, u8, i16, u16, i32, u32, f32, f64)
+    - Support sequential cursor-based access with automatic advancement
+    - Support compiled layouts (struct-like buffers) with named fields
+    - Slice, clone, reverse, fill, and compare buffers
+    - Convert buffers to hex or binary strings for debugging
+    - Efficient for hot paths and memory-sensitive systems
+    - Fully optimized for --!native and --!optimize 2
 
-	This module is designed for hot paths, serialization,
-	custom number systems, ECS, networking, etc.
+    Design Philosophy:
+    - Unsafe by design (no bounds checks)
+    - Predictable constant-time operations
+    - Composable for building higher-level serializers, ECS storage, or numeric systems
+
+    This module is intended for:
+    - Serialization and binary packet building
+    - Custom numeric systems (BN, layered numbers, scientific)
+    - ECS / archetype storage
+    - Networking or performance-critical data formats
+
+    Caller is responsible for buffer size, offsets, and type correctness.
 ]]
 
 local module = {}
@@ -102,28 +115,28 @@ end
 function module.writeNext(cur, typ: ValueType, val: any)
 	local p = cur.pos
 	if typ == "i8" then
-		buffer.writei8(cur.buf, p, val)
+		buffer.writei8(cur.buff, p, val)
 		cur.pos = p + 1
 	elseif typ == "u8" then
-		buffer.writeu8(cur.buf, p, val)
+		buffer.writeu8(cur.buff, p, val)
 		cur.pos = p + 1
 	elseif typ == "i16" then
-		buffer.writei16(cur.buf, p, val)
+		buffer.writei16(cur.buff, p, val)
 		cur.pos = p + 2
 	elseif typ == "u16" then
-		buffer.writeu16(cur.buf, p, val)
+		buffer.writeu16(cur.buff, p, val)
 		cur.pos = p + 2
 	elseif typ == "i32" then
-		buffer.writei32(cur.buf, p, val)
+		buffer.writei32(cur.buff, p, val)
 		cur.pos = p + 4
 	elseif typ == "u32" then
-		buffer.writeu32(cur.buf, p, val)
+		buffer.writeu32(cur.buff, p, val)
 		cur.pos = p + 4
 	elseif typ == "f32" then
-		buffer.writef32(cur.buf, p, val)
+		buffer.writef32(cur.buff, p, val)
 		cur.pos = p + 4
 	end
-	buffer.writef64(cur.buf, p, val)
+	buffer.writef64(cur.buff, p, val)
 	cur.pos = p + 8
 end
 
@@ -135,28 +148,28 @@ function module.readNext(cur, typ: ValueType)
 	local p = cur.pos
 	if typ == "i8" then
 		cur.pos = p + 1
-		return buffer.readi8(cur.buf, p)
+		return buffer.readi8(cur.buff, p)
 	elseif typ == "u8" then
 		cur.pos = p + 1
-		return buffer.readu8(cur.buf, p)
+		return buffer.readu8(cur.buff, p)
 	elseif typ == "i16" then
 		cur.pos = p + 2
-		return buffer.readi16(cur.buf, p)
+		return buffer.readi16(cur.buff, p)
 	elseif typ == "u16" then
 		cur.pos = p + 2
-		return buffer.readu16(cur.buf, p)
+		return buffer.readu16(cur.buff, p)
 	elseif typ == "i32" then
 		cur.pos = p + 4
-		return buffer.readi32(cur.buf, p)
+		return buffer.readi32(cur.buff, p)
 	elseif typ == "u32" then
 		cur.pos = p + 4
-		return buffer.readu32(cur.buf, p)
+		return buffer.readu32(cur.buff, p)
 	elseif typ == "f32" then
 		cur.pos = p + 4
-		return buffer.readf32(cur.buf, p)
+		return buffer.readf32(cur.buff, p)
 	end
 	cur.pos = p + 8
-	return buffer.readf64(cur.buf, p)
+	return buffer.readf64(cur.buff, p)
 end
 
 -- Returns the byte size of a given primitive type
@@ -207,6 +220,74 @@ end
 -- Writes a field into a structured buffer
 function module.structSet(buff: buffer, lay, field, typ: ValueType, val: any)
 	module.write(buff, typ, lay.off[field], val)
+end
+
+-- Slices a buffer into a new buffer (fast, zero copy if possible)
+function module.slice(buff: buffer, start: number, len: number): buffer
+	local out = buffer.create(len)
+	buffer.copy(out, 0, buff, start, len)
+	return out
+end
+
+-- fill a range of buffer with a single value
+function module.fillRange(buff: buffer, start: number, len: number, val: number)
+	for i = 0, len-1 do
+		buffer.writeu8(buff, start+i, val)
+	end
+end
+
+-- Reverse the bytes in a buffer
+function module.reverse(buff: buffer): ()
+	local len = buffer.len(buff)
+	for i = 0, (len//2)-1 do
+		local a = buffer.readu8(buff, i)
+		local b = buffer.readu8(buff, len-i-1)
+		buffer.writeu8(buff, i, b)
+		buffer.writeu8(buff, len-i,1, a)
+	end
+end
+
+-- Compare two buffers (returns -1 if a < b, 0 if equal, 1 if a > b)
+function module.compare(a: buffer, b: buffer): number
+	local len = math.min(buffer.len(a), buffer.len(b))
+	for i = 0, len-1 do
+		local va = buffer.readu8(a, i)
+		local vb = buffer.readu8(b, i)
+		if va < vb then return -1 end
+		if va > vb then return 1 end
+	end
+	if buffer.len(a) < buffer.len(b) then return -1 elseif buffer.len(a) > buffer.len(b) then return 1 end
+	return 0
+end
+
+-- Clone a buffer
+function module.clone(buff: buffer): buffer
+	local out = buffer.create(buffer.len(buff))
+	buffer.copy(out, 0, buff, 0, buffer.len(buff))
+	return out
+end
+
+-- Convert a numeric buffer to hex string (useful for debugging)
+function module.toHex(buff: buffer): string
+	local s = {}
+	for i = 0, buffer.len(buff)-1 do
+		s[i+1] = string.format('%02X', buffer.readu8(buff, i))
+	end
+	return table.concat(s)
+end
+
+-- Convert a buffer to binary string (debugging or serialization)
+function module.toBinaryString(buff: buffer): string
+	local s = {}
+	for i = 0, buffer.len(buff)-1 do
+		local byte = buffer.readu8(buff, i)
+		local bin = ""
+		for b = 7, 0, -1 do
+			bin = bin .. (bit32.extract(byte, b) == 1 and "1" or "0")
+		end
+		s[i+1] = bin
+	end
+	return table.concat(s)
 end
 
 return module
