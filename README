@@ -1,0 +1,178 @@
+Buffer Utility Module (Luau / Roblox)
+
+A low-level, high-performance buffer utility module for Roblox Luau.
+Designed for unsafe, hot-path usage where speed and control matter more than safety checks.
+
+This module provides typed reads/writes, cursor-based serialization, and compiled layouts
+for struct-like access — without bounds checking or runtime overhead.
+
+============================================================
+FEATURES
+============================================================
+
+- Fast typed reads & writes (i8, u16, f64, etc.)
+- Cursor-based sequential packing/unpacking
+- Compiled layouts (struct-like buffers)
+- Any buffer size
+- No bounds checks (caller is responsible)
+- Optimized for native + JIT hot paths
+- Suitable for ECS, networking, custom number systems, serialization
+
+============================================================
+DESIGN PHILOSOPHY
+============================================================
+
+This module is intentionally:
+
+- Unsafe – no bounds checking
+- Low-level – thin wrapper over Roblox buffer
+- Predictable – constant-time operations
+- Composable – meant to be built upon
+
+If you want safety, validation, or ergonomics, add them on top,
+not inside.
+
+============================================================
+SUPPORTED TYPES
+============================================================
+
+Type    | Size (bytes)
+---------------------
+i8/u8  | 1
+i16/u16| 2
+i32/u32| 4
+f32    | 4
+f64    | 8
+
+============================================================
+INSTALLATION
+============================================================
+
+1. Create a ModuleScript in Roblox Studio
+2. Paste the source code into it
+3. Require it like any other module
+
+Example:
+
+local Buffer = require(path.To.BufferModule)
+
+============================================================
+BASIC USAGE
+============================================================
+
+Creating a buffer:
+
+local buf = Buffer.new(16)
+
+Writing and reading values:
+
+Buffer.write(buf, "i8", 0, 1)
+Buffer.write(buf, "f64", 1, 123.456)
+
+local a = Buffer.read(buf, "i8", 0)
+local b = Buffer.read(buf, "f64", 1)
+
+============================================================
+CURSOR-BASED SEQUENTIAL ACCESS
+============================================================
+
+Useful for serialization and binary packing.
+
+local buf = Buffer.new(32)
+local cur = Buffer.cursor(buf, 0)
+
+Buffer.writeNext(cur, "i8", 1)
+Buffer.writeNext(cur, "f64", 99.9)
+
+cur.pos = 0
+
+local x = Buffer.readNext(cur, "i8")
+local y = Buffer.readNext(cur, "f64")
+
+The cursor automatically advances by the size of each type.
+
+============================================================
+COMPILED LAYOUTS (STRUCT-LIKE BUFFERS)
+============================================================
+
+Compile a layout once and reuse it forever.
+
+local Layout = Buffer.compileLayout({
+    "i8",   -- sign
+    "f64",  -- value
+    "i32",  -- exponent
+})
+
+local buf = Buffer.structNew(Layout)
+
+Buffer.structSet(buf, Layout, "i8", "i8", 1)
+Buffer.structSet(buf, Layout, "f64", "f64", 123.4)
+
+local v = Buffer.structGet(buf, Layout, "f64", "f64")
+
+Layouts eliminate repeated offset math and keep memory layouts explicit.
+
+============================================================
+PADDING & SKIPPING FIELDS
+============================================================
+
+Buffer.advance(cur, "f64") -- skip 8 bytes
+
+Useful for alignment, reserved space, or future-proofing formats.
+
+============================================================
+PERFORMANCE NOTES
+============================================================
+
+- No runtime bounds checks
+- No allocations during reads/writes
+- Constant-time operations
+- Designed to be inlined by Luau JIT
+- Safe to use in tight loops and hot paths
+
+============================================================
+WHEN TO USE THIS
+============================================================
+
+- Custom number systems (BN, scientific, layered numbers)
+- Binary serialization
+- Network packet building
+- ECS / archetype storage
+- Performance-critical data formats
+
+============================================================
+WHEN NOT TO USE THIS
+============================================================
+
+- If you need safety guarantees
+- If you want automatic resizing
+- If incorrect offsets must not crash logic
+- If ergonomics are more important than performance
+
+============================================================
+EXTENDING THE MODULE
+============================================================
+
+This module is meant to be extended with:
+
+- Branchless read/write tables
+- Generated struct accessors
+- Arena / buffer pooling
+- Alignment helpers
+- Debug validation layers
+- Domain-specific serializers
+
+============================================================
+LICENSE
+============================================================
+
+MIT License.
+Use it freely.
+No warranty.
+No liability.
+
+============================================================
+AUTHOR
+============================================================
+
+Created by SillyDev2026
