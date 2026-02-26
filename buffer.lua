@@ -30,10 +30,10 @@
 ]]
 
 local module = {}
-export type IntType ="i8"|"u8"|"i16"|"u16"|"i32" | "u32"
-export type FloatType ="f32"|"f64"
-
+export type IntType = "i8"|"u8"|"i16"|"u16"|"i32"|"u32"
+export type FloatType = "f32"|"f64"
 export type ValueType = IntType | FloatType
+
 module.Size = {
 	i8  = 1,  u8  = 1,
 	i16 = 2,  u16 = 2,
@@ -42,8 +42,7 @@ module.Size = {
 	f64 = 8,
 }
 
---[[
-Creates a new buffer wtih a fixed byte size
+--[[ Creates a new buffer with a fixed byte size
 Example: module.new(12)
 -- 1 byte i8 + 8 bytes f64 + 3 bytes padding
 ]]
@@ -58,7 +57,7 @@ end
 
 -- Zero-fills the entire buffer
 function module.clear(buff: buffer): ()
-	buffer.fill(buff, 0)
+	buffer.fill(buff, 0, 0, buffer.len(buff))
 end
 
 -- Copies raw bytes between buffers
@@ -66,8 +65,7 @@ function module.copy(dst: buffer, doff: number, src: buffer, soff: number, len: 
 	buffer.copy(dst, doff, src, soff, len)
 end
 
---[[
-	Writes a value of the given type at a byte offset.
+--[[ Writes a value of the given type at a byte offset.
 	⚠ No bounds checking.
 	⚠ Caller must ensure offset + sizeof(type) is valid.
 ]]
@@ -79,12 +77,11 @@ function module.write(buff: buffer, typ: ValueType, off: number, val: any)
 	elseif typ == "i32" then buffer.writei32(buff, off, val)
 	elseif typ == "u32" then buffer.writeu32(buff, off, val)
 	elseif typ == "f32" then buffer.writef32(buff, off, val)
+	elseif typ == "f64" then buffer.writef64(buff, off, val)
 	end
-	return buffer.writef64(buff, off, val)
 end
 
---[[
-	Reads a value of the given type at a byte offset.
+--[[ Reads a value of the given type at a byte offset.
 	⚠ No bounds checking.
 ]]
 function module.read(buff: buffer, typ: ValueType, off: number)
@@ -95,20 +92,18 @@ function module.read(buff: buffer, typ: ValueType, off: number)
 	elseif typ == "i32" then return buffer.readi32(buff, off)
 	elseif typ == "u32" then return buffer.readu32(buff, off)
 	elseif typ == "f32" then return buffer.readf32(buff, off)
+	elseif typ == "f64" then return buffer.readf64(buff, off)
 	end
-	return buffer.readf64(buff, off)
 end
 
---[[
-	Creates a cursor object for sequential reading/writing.
+--[[ Creates a cursor object for sequential reading/writing.
 	The cursor tracks a mutable byte position.
 ]]
 function module.cursor(buff: buffer, pos: number): {buff: buffer, pos: number}
 	return {buff = buff, pos = pos}
 end
 
---[[
-	Writes a value at the cursor position
+--[[ Writes a value at the cursor position
 	and automatically advances the cursor.
 	Used for sequential packing.
 ]]
@@ -135,13 +130,13 @@ function module.writeNext(cur, typ: ValueType, val: any)
 	elseif typ == "f32" then
 		buffer.writef32(cur.buff, p, val)
 		cur.pos = p + 4
+	elseif typ == "f64" then
+		buffer.writef64(cur.buff, p, val)
+		cur.pos = p + 8
 	end
-	buffer.writef64(cur.buff, p, val)
-	cur.pos = p + 8
 end
 
---[[
-	Reads a value at the cursor position
+--[[ Reads a value at the cursor position
 	and automatically advances the cursor.
 ]]
 function module.readNext(cur, typ: ValueType)
@@ -167,9 +162,10 @@ function module.readNext(cur, typ: ValueType)
 	elseif typ == "f32" then
 		cur.pos = p + 4
 		return buffer.readf32(cur.buff, p)
+	elseif typ == "f64" then
+		cur.pos = p + 8
+		return buffer.readf64(cur.buff, p)
 	end
-	cur.pos = p + 8
-	return buffer.readf64(cur.buff, p)
 end
 
 -- Returns the byte size of a given primitive type
@@ -179,21 +175,17 @@ end
 
 -- useful for padding or skipping fields
 function module.advanced(cur, typ: ValueType)
-	cur.pos += module.Size[typ]
+	cur.pos = cur.pos + module.Size[typ]
 end
 
---[[
-	Compiles a layout into fixed offsets.
-
+--[[ Compiles a layout into fixed offsets.
 	Input:
 		{ "i8", "f64", "i32" }
-
 	Output:
 		{
 			size = total byte size,
 			off = { [1]=0, [2]=1, [3]=9 }
 		}
-
 	Run once, reuse forever.
 ]]
 function module.compileLayout(lay): {size: number, off: {[string]: number}}
@@ -202,13 +194,14 @@ function module.compileLayout(lay): {size: number, off: {[string]: number}}
 	for i = 1, #lay do
 		local f = lay[i]
 		off[f] = cursor
-		cursor += module.Size[f]
+		cursor = cursor + module.Size[f]
 	end
-	return {size=cursor, off=off}
+	return {size = cursor, off = off}
 end
 
 -- Creates a buffer sized exactly for a compiled layout
 function module.structNew(lay)
+	assert(lay.size, "Layout must be compiled with module.compileLayout first")
 	return buffer.create(lay.size)
 end
 
@@ -231,32 +224,34 @@ end
 
 -- fill a range of buffer with a single value
 function module.fillRange(buff: buffer, start: number, len: number, val: number)
-	for i = 0, len-1 do
-		buffer.writeu8(buff, start+i, val)
+	for i = 0, len - 1 do
+		buffer.writeu8(buff, start + i, val)
 	end
 end
 
 -- Reverse the bytes in a buffer
 function module.reverse(buff: buffer): ()
 	local len = buffer.len(buff)
-	for i = 0, (len//2)-1 do
+	for i = 0, (len // 2) - 1 do
 		local a = buffer.readu8(buff, i)
-		local b = buffer.readu8(buff, len-i-1)
+		local b = buffer.readu8(buff, len - i - 1)
 		buffer.writeu8(buff, i, b)
-		buffer.writeu8(buff, len-i,1, a)
+		buffer.writeu8(buff, len - i - 1, a)
 	end
 end
 
 -- Compare two buffers (returns -1 if a < b, 0 if equal, 1 if a > b)
 function module.compare(a: buffer, b: buffer): number
 	local len = math.min(buffer.len(a), buffer.len(b))
-	for i = 0, len-1 do
+	for i = 0, len - 1 do
 		local va = buffer.readu8(a, i)
 		local vb = buffer.readu8(b, i)
 		if va < vb then return -1 end
 		if va > vb then return 1 end
 	end
-	if buffer.len(a) < buffer.len(b) then return -1 elseif buffer.len(a) > buffer.len(b) then return 1 end
+	if buffer.len(a) < buffer.len(b) then return -1
+	elseif buffer.len(a) > buffer.len(b) then return 1
+	end
 	return 0
 end
 
@@ -270,8 +265,8 @@ end
 -- Convert a numeric buffer to hex string (useful for debugging)
 function module.toHex(buff: buffer): string
 	local s = {}
-	for i = 0, buffer.len(buff)-1 do
-		s[i+1] = string.format('%02X', buffer.readu8(buff, i))
+	for i = 0, buffer.len(buff) - 1 do
+		s[i + 1] = string.format('%02X', buffer.readu8(buff, i))
 	end
 	return table.concat(s)
 end
