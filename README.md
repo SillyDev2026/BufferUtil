@@ -6,8 +6,8 @@ BufferUtil is a **single ModuleScript** built for networking, serialization, cus
 
 It combines a simple `Writer` / `Reader` workflow with advanced integer widths, compact floats, VarInts, bit cursors, layouts, Roblox datatype codecs, compaction, Base64, and debugging utilities.
 
-> **Version:** `4.7.1`  
-> **API:** `4`  
+> **Version:** `1.1.0`  
+> **API:** `1`  
 > **Runtime:** Roblox Luau
 
 ---
@@ -570,7 +570,7 @@ BufferUtil uses:
 --!optimize 2
 ```
 
-v4.7.1 introduced dedicated native Writer / Reader hot paths.
+v1.1.0 introduced dedicated native Writer / Reader hot paths.
 
 ### Actual-game benchmark
 
@@ -581,7 +581,7 @@ v4.7.1 introduced dedicated native Writer / Reader hot paths.
 Roblox game/client environment
 ```
 
-| Operation | v4.7.1 |
+| Operation | v1.1.0 |
 |---|---:|
 | Write U8 | ~66 ns/op |
 | Write I16 | ~65 ns/op |
