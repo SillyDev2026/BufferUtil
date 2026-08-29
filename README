@@ -1,197 +1,1326 @@
-Buffer Utility Module (Luau / Roblox)
+# BufferUtil
 
-A low-level, high-performance buffer utility module for Roblox Luau.
-Designed for unsafe, hot-path usage where speed and control matter more than safety checks.
+**High-performance buffer serialization and binary utility module for Roblox Luau.**
 
-This module provides typed reads/writes, cursor-based serialization, compiled layouts for struct-like access, and advanced buffer utilities — all without bounds checking or runtime overhead.
+BufferUtil is a single-module buffer toolkit built for fast binary serialization, networking, custom number systems, compact storage, and performance-sensitive Roblox systems.
 
-============================================================
-FEATURES
-========
+It provides a simple `writer()` / `reader()` API similar to modern buffer libraries while also exposing low-level typed access, bit-level packing, compact integer and float formats, layouts, variable-length codecs, Roblox datatype serialization, compaction, debugging tools, and buffer utilities.
 
-* Fast typed reads & writes (i8, u16, f64, etc.)
-* Cursor-based sequential packing/unpacking
-* Compiled layouts (struct-like buffers)
-* Slice, clone, reverse, fill, and compare buffers
-* Hexadecimal and binary string conversions
-* Any buffer size
-* No bounds checks (caller is responsible)
-* Optimized for native + JIT hot paths
-* Suitable for ECS, networking, custom number systems, serialization
+Current release:
 
-============================================================
-DESIGN PHILOSOPHY
-=================
+```text
+BufferUtil 1.1.0
+API Version 4
+```
 
-This module is intentionally:
+---
 
-* Unsafe – no bounds checking
-* Low-level – thin wrapper over Roblox buffer
-* Predictable – constant-time operations
-* Composable – meant to be built upon
+## Features
 
-If you want safety, validation, or ergonomics, add them on top, not inside.
+- Single ModuleScript
+- Optimized `Writer` and `Reader`
+- Automatic Writer buffer growth
+- Fast native integer and float hot paths
+- Strict integer validation
+- Direct typed reads and writes
+- Generic typed reads and writes
+- Byte Cursor and BitCursor APIs
+- Exact integer bit packing from 1 to 53 bits
+- Custom integer formats up to 53 bits
+- Compact floating-point formats from 8 to 48 bits
+- VarUInt, VarInt, and VarString
+- Compiled layouts / struct-style buffers
+- Buffer compaction
+- Packed booleans
+- Roblox datatype serialization
+- Hex, binary, and Base64 conversion
+- Buffer inspection and diff tools
+- Human-readable byte and bit formatting
+- Native `--!native` + `--!optimize 2` hot paths
+- Designed for networking, ECS, serialization, and custom numeric systems
 
-============================================================
-SUPPORTED TYPES
-===============
+---
 
-| Type    | Size (bytes) |
-| ------- | ------------ |
-| i8/u8   | 1            |
-| i16/u16 | 2            |
-| i32/u32 | 4            |
-| f32     | 4            |
-| f64     | 8            |
+# Installation
 
-============================================================
-INSTALLATION
-============
+Create a `ModuleScript` in Roblox Studio:
 
-1. Create a ModuleScript in Roblox Studio
-2. Paste the source code into it
-3. Require it like any other module
+```text
+ReplicatedStorage
+└── BufferUtil
+```
+
+Paste the BufferUtil source into the ModuleScript.
+
+Then require it normally:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local BufferUtil = require(
+	ReplicatedStorage.BufferUtil
+)
+```
+
+No Wally package, additional dependency, or submodule is required.
+
+---
+
+# Quick Start
+
+The easiest way to use BufferUtil is through the automatic `Writer` and `Reader` APIs.
+
+```lua
+local BufferUtil = require(
+	game.ReplicatedStorage.BufferUtil
+)
+
+local writer = BufferUtil.writer()
+
+writer:WriteUInt8(5)
+writer:WriteUInt32(1_000_000)
+writer:WriteFloat64(math.pi)
+writer:WriteVector3(
+	Vector3.new(10, 20, 30)
+)
+
+local packet = writer:Finish()
+
+local reader = BufferUtil.reader(packet)
+
+print(reader:ReadUInt8())
+print(reader:ReadUInt32())
+print(reader:ReadFloat64())
+print(reader:ReadVector3())
+```
+
+The Writer automatically grows when more capacity is required.
+
+`Finish()` returns a buffer containing only the written bytes.
+
+---
+
+# Writer
+
+Create an automatically growing writer:
+
+```lua
+local writer = BufferUtil.writer()
+```
+
+You can optionally provide an initial capacity:
+
+```lua
+local writer = BufferUtil.writer(128)
+```
+
+The capacity automatically expands when required.
+
+## Native numeric writes
+
+```lua
+writer:WriteInt8(-10)
+writer:WriteUInt8(255)
+
+writer:WriteInt16(-1000)
+writer:WriteUInt16(50000)
+
+writer:WriteInt32(-1_000_000)
+writer:WriteUInt32(4_000_000_000)
+
+writer:WriteFloat32(123.5)
+writer:WriteFloat64(math.pi)
+```
+
+Short aliases are also available:
+
+```lua
+writer:WriteI8(-10)
+writer:WriteU8(255)
+
+writer:WriteI16(-1000)
+writer:WriteU16(50000)
+
+writer:WriteI32(-1_000_000)
+writer:WriteU32(4_000_000_000)
+
+writer:WriteF32(123.5)
+writer:WriteF64(math.pi)
+```
+
+The native Writer paths are optimized separately from the generic type dispatcher.
+
+---
+
+# Reader
+
+Create a reader from a buffer:
+
+```lua
+local reader = BufferUtil.reader(packet)
+```
+
+Read values sequentially:
+
+```lua
+local id = reader:ReadUInt32()
+local health = reader:ReadFloat32()
+local position = reader:ReadVector3()
+```
+
+Short aliases are also supported:
+
+```lua
+reader:ReadU32()
+reader:ReadF32()
+reader:ReadVector3()
+```
+
+Reader methods advance automatically after successful reads.
+
+---
+
+# Direct Typed Access
+
+BufferUtil can also operate directly on buffers without using Writer or Reader objects.
+
+```lua
+local buff = BufferUtil.new(16)
+
+BufferUtil.writei8(
+	buff,
+	0,
+	1
+)
+
+BufferUtil.writef64(
+	buff,
+	1,
+	123.456
+)
+
+local sign = BufferUtil.readi8(
+	buff,
+	0
+)
+
+local value = BufferUtil.readf64(
+	buff,
+	1
+)
+```
+
+Generic typed access is also available:
+
+```lua
+BufferUtil.write(
+	buff,
+	"u32",
+	0,
+	500
+)
+
+local value = BufferUtil.read(
+	buff,
+	"u32",
+	0
+)
+```
+
+For hot native paths, prefer the dedicated typed methods.
+
+---
+
+# Supported Numeric Formats
+
+## Integers
+
+| Type | Storage | Data bits |
+| --- | ---: | ---: |
+| `i8` / `u8` | 1 B | 8 |
+| `i16` / `u16` | 2 B | 16 |
+| `i24` / `u24` | 3 B | 24 |
+| `i32` / `u32` | 4 B | 32 |
+| `i40` / `u40` | 5 B | 40 |
+| `i48` / `u48` | 6 B | 48 |
+| `i53` / `u53` | 7 B | 53 |
+
+The 53-bit formats use the maximum exact integer range available through normal Luau numbers.
+
+BufferUtil also supports arbitrary exact bit widths from **1 to 53 bits**.
+
+---
+
+## Floating Point
+
+| Type | Storage | Format |
+| --- | ---: | --- |
+| `f8e4m3` | 1 B | 1 / 4 / 3 |
+| `f8e5m2` | 1 B | 1 / 5 / 2 |
+| `f16` | 2 B | 1 / 5 / 10 |
+| `bf16` | 2 B | 1 / 8 / 7 |
+| `f24` | 3 B | 1 / 8 / 15 |
+| `f32` | 4 B | Roblox native |
+| `f40` | 5 B | 1 / 8 / 31 |
+| `f48` | 6 B | 1 / 11 / 36 |
+| `f64` | 8 B | Roblox native |
+
+Custom float codecs support:
+
+- positive and negative zero
+- subnormal values
+- normal values
+- round-to-nearest-even
+- infinity
+- NaN
+- overflow and underflow handling
 
 Example:
 
-local Buffer = require(path.To.BufferModule)
+```lua
+local writer = BufferUtil.writer()
 
-============================================================
-BASIC USAGE
-===========
+writer:WriteF16(87.5)
+writer:WriteF48(123456.789)
+```
 
-Creating a buffer:
+Compact formats trade precision for smaller packet sizes.
 
-local buf = Buffer.new(16)
+---
 
-Writing and reading values:
+# Compact Integer Packing
 
-Buffer.write(buf, "i8", 0, 1)
-Buffer.write(buf, "f64", 1, 123.456)
+BufferUtil supports integers that are not limited to 8/16/32-bit boundaries.
 
-local a = Buffer.read(buf, "i8", 0)
-local b = Buffer.read(buf, "f64", 1)
+```lua
+local writer = BufferUtil.writer()
 
-============================================================
-CURSOR-BASED SEQUENTIAL ACCESS
-==============================
+writer:WriteU24(15_000_000)
+writer:WriteU53(9_000_000_000_000)
+```
 
-Useful for serialization and binary packing.
+This can reduce network and storage overhead when a full 32-bit or 64-bit representation is unnecessary.
 
-local buf = Buffer.new(32)
-local cur = Buffer.cursor(buf, 0)
+---
 
-Buffer.writeNext(cur, "i8", 1)
-Buffer.writeNext(cur, "f64", 99.9)
+# Bit Packing
 
-cur.pos = 0
+For maximum control, use a BitCursor.
 
-local x = Buffer.readNext(cur, "i8")
-local y = Buffer.readNext(cur, "f64")
+```lua
+local buff = BufferUtil.new(16)
+local cur = BufferUtil.bitCursor(buff)
 
-The cursor automatically advances by the size of each type.
-You can also skip bytes:
+BufferUtil.writeUintBitsNext(
+	cur,
+	13,
+	5000
+)
 
-Buffer.advance(cur, "f64") -- skip 8 bytes
+BufferUtil.writeUintBitsNext(
+	cur,
+	20,
+	900000
+)
 
-============================================================
-COMPILED LAYOUTS (STRUCT-LIKE BUFFERS)
-======================================
+BufferUtil.writeUintBitsNext(
+	cur,
+	20,
+	800000
+)
+```
 
-Compile a layout once and reuse it forever.
+The example above writes:
 
-local Layout = Buffer.compileLayout({
-"i8",   -- sign
-"f64",  -- value
-"i32",  -- exponent
+```text
+13 + 20 + 20 = 53 bits
+```
+
+The working buffer is 16 bytes, but only 53 bits are meaningful.
+
+Compact it:
+
+```lua
+local compact = BufferUtil.compact(cur)
+
+print(buffer.len(compact))
+-- 7
+```
+
+A 53-bit payload requires only:
+
+```text
+ceil(53 / 8) = 7 bytes
+```
+
+The final three padding bits are cleared.
+
+---
+
+# VarUInt
+
+Variable-length unsigned integers use fewer bytes for smaller values.
+
+```lua
+local writer = BufferUtil.writer()
+
+writer:WriteVarUInt(5)
+writer:WriteVarUInt(500)
+writer:WriteVarUInt(1_000_000)
+```
+
+Read them using:
+
+```lua
+local a = reader:ReadVarUInt()
+local b = reader:ReadVarUInt()
+local c = reader:ReadVarUInt()
+```
+
+VarUInt supports exact non-negative integers within Luau's safe integer range.
+
+---
+
+# VarInt
+
+Signed variable-length integers use ZigZag encoding.
+
+```lua
+writer:WriteVarInt(-50)
+writer:WriteVarInt(50)
+```
+
+Read:
+
+```lua
+local value = reader:ReadVarInt()
+```
+
+Small positive and negative values remain compact.
+
+---
+
+# VarString
+
+Variable-length strings use a VarUInt length prefix.
+
+```lua
+writer:WriteVarString("Hello")
+```
+
+For a five-byte ASCII string:
+
+```text
+1 B length
+5 B payload
+----------
+6 B total
+```
+
+Read:
+
+```lua
+local text = reader:ReadVarString()
+```
+
+---
+
+# Raw Strings
+
+Raw fixed-length strings are also supported.
+
+```lua
+writer:WriteString("NetStream")
+```
+
+When reading raw data, provide the known byte length:
+
+```lua
+local text = reader:ReadString(9)
+```
+
+Use `VarString` when the string size is not already known by the protocol.
+
+---
+
+# Roblox Datatypes
+
+BufferUtil includes direct support for common Roblox datatypes.
+
+Supported types include:
+
+- `Vector2`
+- `Vector3`
+- `Color3`
+- compact `Color3u8`
+- `UDim`
+- `UDim2`
+- `Rect`
+- `NumberRange`
+- `CFrame`
+- `BrickColor`
+
+Example:
+
+```lua
+writer:WriteVector3(
+	Vector3.new(1, 2, 3)
+)
+
+writer:WriteColor3(
+	Color3.fromRGB(255, 100, 25)
+)
+
+writer:WriteCFrame(
+	CFrame.new(10, 20, 30)
+)
+```
+
+Read:
+
+```lua
+local position = reader:ReadVector3()
+local color = reader:ReadColor3()
+local cf = reader:ReadCFrame()
+```
+
+A generic datatype API is also available:
+
+```lua
+writer:WriteDataType(
+	Vector3.new(1, 2, 3)
+)
+```
+
+For maximum speed in hot paths, use the dedicated datatype method when available.
+
+---
+
+# Fast Vector3 Path
+
+`WriteVector3()` has a dedicated hot path.
+
+Actual-game benchmark result:
+
+```text
+Write Vector3
+
+BufferUtil 1.1.0:      ~78 ns/op
+Standalone compat:    ~234 ns/op
+```
+
+In that test, the dedicated BufferUtil Vector3 path was about:
+
+```text
+2.98x faster
+```
+
+The standalone compatibility module is a clean-room Sleitnick-style implementation and is **not** the official Sleitnick BufferUtil package, so these numbers should not be presented as an official Sleitnick performance comparison.
+
+---
+
+# Cursor API
+
+For existing preallocated buffers, BufferUtil also provides byte cursors.
+
+```lua
+local buff = BufferUtil.new(32)
+local cur = BufferUtil.cursor(buff)
+
+BufferUtil.writeNext(
+	cur,
+	"u32",
+	500
+)
+
+BufferUtil.writeNext(
+	cur,
+	"f64",
+	99.9
+)
+```
+
+Reset:
+
+```lua
+BufferUtil.reset(cur)
+```
+
+Read:
+
+```lua
+local id = BufferUtil.readNext(
+	cur,
+	"u32"
+)
+```
+
+Byte Cursor and BitCursor identities are explicitly separated to prevent accidental cross-use.
+
+---
+
+# Compiled Layouts
+
+Layouts provide reusable struct-like binary memory definitions.
+
+```lua
+local Layout = BufferUtil.compileLayout({
+	{
+		name = "Sign",
+		type = "i8",
+	},
+
+	{
+		name = "Value",
+		type = "f64",
+	},
+
+	{
+		name = "Exponent",
+		type = "i32",
+	},
 })
+```
 
-local buf = Buffer.structNew(Layout)
+Create storage:
 
-Buffer.structSet(buf, Layout, "i8", "i8", 1)
-Buffer.structSet(buf, Layout, "f64", "f64", 123.4)
+```lua
+local buff = BufferUtil.structNew(Layout)
+```
 
-local v = Buffer.structGet(buf, Layout, "f64", "f64")
+Layouts remove repeated manual offset calculations while keeping the binary format explicit.
 
-Layouts eliminate repeated offset math and keep memory layouts explicit.
+They are useful for:
 
-============================================================
-ADVANCED BUFFER UTILITIES
-=========================
+- custom number representations
+- ECS components
+- fixed network packet structures
+- persistent binary formats
+- compact runtime records
 
--- Slice a sub-buffer
-local sub = Buffer.slice(buf, 0, 8)
+---
 
--- Fill a range with a byte value
-Buffer.fillRange(buf, 0, 4, 0xFF)
+# Compaction
 
--- Reverse buffer bytes
-Buffer.reverse(buf)
+BufferUtil can trim unused trailing capacity from buffers and cursors.
 
--- Compare two buffers (-1, 0, 1)
-local cmp = Buffer.compare(buf, sub)
+For a raw buffer, provide the number of meaningful bits:
 
--- Clone a buffer
-local copy = Buffer.clone(buf)
+```lua
+local compact = BufferUtil.compact(
+	buff,
+	53
+)
+```
 
--- Convert to hex or binary string
-local hexStr = Buffer.toHex(buf)
-local binStr = Buffer.toBinaryString(buf)
+For a BitCursor:
 
-These utilities are designed to be fast, allocation-free, and hot-path safe.
+```lua
+local compact = BufferUtil.compact(
+	bitCursor
+)
+```
 
-============================================================
-PERFORMANCE NOTES
-=================
+For a byte Cursor:
 
-* No runtime bounds checks
-* No allocations during reads/writes
-* Constant-time operations
-* Fully optimized for --!native and Luau JIT
-* Safe for tight loops and hot paths
+```lua
+local compact = BufferUtil.compact(
+	cursor
+)
+```
 
-============================================================
-WHEN TO USE THIS
-================
+BufferUtil does **not** scan a buffer and remove arbitrary zero bits.
 
-* Custom number systems (BN, scientific, layered numbers)
-* Binary serialization
-* Network packet building
-* ECS / archetype storage
-* Performance-critical data formats
+Zero bits may be real data.
 
-============================================================
-WHEN NOT TO USE THIS
-====================
+Compaction only removes unused trailing capacity based on an explicit or tracked meaningful length.
 
-* If you need safety guarantees
-* If you want automatic resizing
-* If incorrect offsets must not crash logic
-* If ergonomics are more important than performance
+---
 
-============================================================
-EXTENDING THE MODULE
-====================
+# Compact Statistics
 
-This module can be extended with:
+Inspect how efficiently data is packed:
 
-* Branchless read/write tables
-* Generated struct accessors
-* Arena / buffer pooling
-* Alignment helpers
-* Debug validation layers
-* Domain-specific serializers
+```lua
+local stats = BufferUtil.compactStats(
+	bitCursor
+)
 
-============================================================
-LICENSE
-=======
+print(stats.originalBytes)
+print(stats.usedBits)
+print(stats.compactBytes)
+print(stats.paddingBits)
+print(stats.savedBytes)
+print(stats.percentSaved)
+```
+
+---
+
+# Buffer Size Utilities
+
+Create buffers using byte or bit units:
+
+```lua
+local a = BufferUtil.new(4, "KB")
+local b = BufferUtil.new(2, "MB")
+```
+
+Supported units:
+
+```text
+b
+B
+Kb / kb
+KB / kB
+Mb / mb
+MB
+Gb / gb
+GB
+```
+
+Human-readable formatting:
+
+```lua
+print(
+	BufferUtil.formatBytes(1536)
+)
+-- 1.5 KB
+
+print(
+	BufferUtil.formatBits(1024)
+)
+-- 1 Kb
+```
+
+Inspect a buffer:
+
+```lua
+print(
+	BufferUtil.formatBuffer(
+		buffer.create(4096)
+	)
+)
+-- 4 KB
+```
+
+Inspect a numeric storage type:
+
+```lua
+print(
+	BufferUtil.formatTypeSize("u53")
+)
+```
+
+Example output:
+
+```text
+7 B (53 b data + 3 b padding)
+```
+
+---
+
+# Buffer Utilities
+
+## Slice
+
+```lua
+local section = BufferUtil.slice(
+	buff,
+	4,
+	8
+)
+```
+
+## Clone
+
+```lua
+local copy = BufferUtil.clone(buff)
+```
+
+## Clone meaningful bits
+
+```lua
+local packet = BufferUtil.cloneBits(
+	buff,
+	53
+)
+```
+
+## Resize
+
+```lua
+local resized = BufferUtil.resize(
+	buff,
+	128
+)
+```
+
+## Concatenate
+
+```lua
+local joined = BufferUtil.concat({
+	header,
+	payload,
+	footer,
+})
+```
+
+## Fill
+
+```lua
+BufferUtil.fillRange(
+	buff,
+	0,
+	8,
+	0xFF
+)
+```
+
+## Copy
+
+```lua
+BufferUtil.copy(
+	destination,
+	0,
+	source,
+	0,
+	8
+)
+```
+
+---
+
+# Hex and Binary
+
+Convert buffers into readable hexadecimal:
+
+```lua
+local hex = BufferUtil.toHex(buff)
+```
+
+Create a buffer from hexadecimal:
+
+```lua
+local buff = BufferUtil.fromHex(
+	"DE AD BE EF"
+)
+```
+
+Binary output:
+
+```lua
+local binary = BufferUtil.toBinaryString(
+	buff
+)
+```
+
+Detailed dumps are also available:
+
+```lua
+print(
+	BufferUtil.hexDump(buff)
+)
+
+print(
+	BufferUtil.binaryDump(buff)
+)
+```
+
+---
+
+# Base64
+
+Encode:
+
+```lua
+local text = BufferUtil.base64Encode(
+	buff
+)
+```
+
+Decode:
+
+```lua
+local buff = BufferUtil.base64Decode(
+	text
+)
+```
+
+The decoder validates malformed input, invalid padding, and non-canonical padding bits.
+
+---
+
+# Buffer Inspection
+
+Inspect a buffer:
+
+```lua
+print(
+	BufferUtil.inspect(buff)
+)
+```
+
+Compare buffers:
+
+```lua
+local differences = BufferUtil.diff(
+	a,
+	b
+)
+```
+
+Or inspect changed bytes:
+
+```lua
+local differences = BufferUtil.diffBytes(
+	a,
+	b
+)
+```
+
+These utilities are intended for debugging serialization and network packet formats.
+
+---
+
+# Writer Management
+
+The Writer exposes capacity and position controls.
+
+```lua
+local writer = BufferUtil.writer(64)
+
+print(writer:Tell())
+print(writer:Length())
+print(writer:Capacity())
+print(writer:Remaining())
+```
+
+Ensure future capacity:
+
+```lua
+writer:EnsureCapacity(128)
+```
+
+Move within already-written data:
+
+```lua
+writer:Seek(4)
+```
+
+Skip bytes:
+
+```lua
+writer:Skip(8)
+```
+
+Reset the cursor:
+
+```lua
+writer:Reset()
+```
+
+Clear the writer:
+
+```lua
+writer:Clear()
+```
+
+Get the current backing buffer:
+
+```lua
+local backing = writer:GetBuffer()
+```
+
+Return an exact-size packet:
+
+```lua
+local packet = writer:Finish()
+```
+
+---
+
+# Reader Management
+
+```lua
+print(reader:Tell())
+print(reader:Remaining())
+```
+
+Seek:
+
+```lua
+reader:Seek(8)
+```
+
+Reset:
+
+```lua
+reader:Reset()
+```
+
+Skip:
+
+```lua
+reader:Skip(4)
+```
+
+Check before reading:
+
+```lua
+if reader:CanRead(8) then
+	-- read safely
+end
+```
+
+Peek without advancing:
+
+```lua
+local value = reader:PeekU32()
+```
+
+---
+
+# Safety Model
+
+Older versions of BufferUtil were intentionally minimal and unsafe.
+
+Current BufferUtil versions use a mixed model:
+
+### Public low-level helpers
+
+Validate:
+
+- buffer ranges
+- integer widths
+- numeric ranges
+- cursor identity
+- malformed variable-length encodings
+- invalid custom float usage
+- invalid layouts
+- invalid compaction lengths
+
+### Optimized Writer / Reader hot paths
+
+The common native methods use specialized fast implementations to avoid repeated generic dispatch and validation layers.
+
+For example:
+
+```lua
+writer:WriteU32(value)
+reader:ReadU32()
+```
+
+are optimized independently from:
+
+```lua
+writer:Write("u32", value)
+reader:Read("u32")
+```
+
+Integer writes still reject values outside the declared format.
+
+For example:
+
+```lua
+writer:WriteU8(256)
+```
+
+will fail instead of silently truncating the value.
+
+---
+
+# Performance
+
+BufferUtil uses:
+
+```lua
+--!strict
+--!native
+--!optimize 2
+```
+
+The v1.1.0 release specifically optimized the native Writer and Reader paths.
+
+Actual-game test results:
+
+```text
+Operation              BufferUtil 1.1.0
+----------------------------------------
+Write U8                 ~66 ns/op
+Write I16                ~65 ns/op
+Write U32                ~66 ns/op
+Write F32                ~60 ns/op
+Write F64                ~63 ns/op
+
+Read U8                  ~27 ns/op
+Read I16                 ~27 ns/op
+Read U32                 ~27 ns/op
+Read F32                 ~27 ns/op
+Read F64                 ~27 ns/op
+
+Write raw string        ~106 ns/op
+Read raw string          ~64 ns/op
+
+Write Vector3            ~78 ns/op
+WriteDataType Vector3   ~187 ns/op
+Auto-grow packet        ~947 ns/op
+```
+
+Benchmark conditions:
+
+```text
+100,000 iterations
+10,000 warmup iterations
+7 rounds
+actual Roblox game/client environment
+```
+
+Performance varies by hardware, Roblox runtime version, server/client context, and JIT state.
+
+These figures should be treated as measurements from one test environment, not universal guarantees.
+
+---
+
+# Why Dedicated Methods Matter
+
+Generic:
+
+```lua
+writer:Write(
+	"u32",
+	500
+)
+```
+
+is convenient when the type is dynamic.
+
+For hot paths:
+
+```lua
+writer:WriteU32(500)
+```
+
+avoids generic type dispatch.
+
+The same applies to Roblox datatypes:
+
+```lua
+writer:WriteDataType(position)
+```
+
+is flexible.
+
+For maximum speed:
+
+```lua
+writer:WriteVector3(position)
+```
+
+uses the specialized Vector3 path.
+
+---
+
+# Example Network Packet
+
+```lua
+local writer = BufferUtil.writer()
+
+writer:WriteU8(1) -- packet type
+writer:WriteVarUInt(12345) -- entity ID
+writer:WriteVector3(
+	Vector3.new(10, 20, 30)
+)
+writer:WriteF16(95.5) -- compact health
+writer:WriteVarString("Player")
+
+local packet = writer:Finish()
+
+print(
+	"Packet size:",
+	buffer.len(packet),
+	"bytes"
+)
+```
+
+Read:
+
+```lua
+local reader = BufferUtil.reader(packet)
+
+local packetType = reader:ReadU8()
+local entityId = reader:ReadVarUInt()
+local position = reader:ReadVector3()
+local health = reader:ReadF16()
+local name = reader:ReadVarString()
+```
+
+---
+
+# Example Custom Number Storage
+
+A custom number representation can use exactly the bytes it needs.
+
+Instead of:
+
+```text
+i8 at byte 0
+3 unused bytes
+f64 at byte 4
+
+12 bytes total
+```
+
+pack it as:
+
+```text
+i8 at byte 0
+f64 at byte 1
+
+9 bytes total
+```
+
+That preserves full `f64` precision while reducing storage by:
+
+```text
+25%
+```
+
+For an optional compact representation:
+
+```text
+i8 + f48
+= 1 B + 6 B
+= 7 B
+```
+
+This saves more space at the cost of floating-point precision.
+
+---
+
+# When To Use BufferUtil
+
+BufferUtil is well suited for:
+
+- custom networking systems
+- compact RemoteEvent payloads
+- NetStream-style protocols
+- binary serialization
+- custom number libraries
+- save-data formats
+- ECS component storage
+- entity replication
+- packet construction
+- bit fields
+- packed metadata
+- compression pipelines
+- debugging binary formats
+
+---
+
+# When Not To Use BufferUtil
+
+You may not need BufferUtil when:
+
+- normal Lua tables are already sufficient
+- packet size is irrelevant
+- the code is not performance-sensitive
+- binary compatibility is unnecessary
+- simplicity is more important than control
+
+Roblox's native buffer API is already excellent for simple use cases.
+
+BufferUtil is most useful when you need a larger serialization system around it.
+
+---
+
+# Design Philosophy
+
+BufferUtil aims to combine:
+
+### Performance
+
+Common operations should stay close to native buffer performance.
+
+### Control
+
+The caller can choose exact storage widths and binary representations.
+
+### Safety
+
+Public APIs validate ranges and formats where silent corruption would be dangerous.
+
+### Compactness
+
+Use only as many bytes or bits as the protocol requires.
+
+### Composability
+
+Low-level primitives can be combined into higher-level networking, storage, ECS, and numeric systems.
+
+### One-module deployment
+
+BufferUtil does not require a dependency tree to use its core functionality.
+
+---
+
+# Compatibility Style
+
+BufferUtil supports familiar Reader / Writer names such as:
+
+```lua
+writer:WriteUInt8()
+writer:WriteUInt16()
+writer:WriteUInt32()
+writer:WriteFloat32()
+writer:WriteFloat64()
+
+reader:ReadUInt8()
+reader:ReadUInt16()
+reader:ReadUInt32()
+reader:ReadFloat32()
+reader:ReadFloat64()
+```
+
+It also keeps shorter BufferUtil-style names:
+
+```lua
+writer:WriteU8()
+writer:WriteU16()
+writer:WriteU32()
+writer:WriteF32()
+writer:WriteF64()
+```
+
+This allows simple serialization code without giving up the advanced BufferUtil feature set.
+
+---
+
+# Roadmap
+
+Possible future improvements include:
+
+- additional Reader / Writer compatibility aliases
+- more compact Roblox datatype codecs
+- compact quaternion CFrame encoding
+- generated layout accessors
+- optional buffer pools
+- schema-based packet generation
+- more specialized Writer hot paths
+- additional benchmarks
+- public API documentation generation
+
+---
+
+# License
 
 MIT License.
-Use it freely.
-No warranty. No liability.
 
-============================================================
-AUTHOR
-======
+Use, modify, and distribute freely under the terms of the MIT License.
 
-Created by SillyDev2026
+Software is provided without warranty.
+
+---
+
+# Author
+
+Created by **SillyDev2026**.
