@@ -1,12 +1,21 @@
 # BufferUtil
 
+## v1.1.1 — Base64 decode hot path
+
+`BufferUtil.fromBase64` now uses one numeric `string.byte` read and a precomputed byte-indexed alphabet table instead of allocating four one-character substrings per Base64 quartet. It retains whitespace tolerance, canonical padding checks, return type and existing public signature. `toBase64` and binary buffer layout are unchanged.
+
+**Luau source rationale:** Luau optimizes built-ins, so this change is a targeted allocation reduction, **not an independently measured throughput improvement**. Run `tests/BufferUtilBase64Regression.server.lua` with Script Analysis and a before/after Studio profiler or benchmark for a speed claim.
+
+---
+
+
 **Fast, compact binary serialization for Roblox Luau.**
 
 BufferUtil is a **single ModuleScript** built for networking, serialization, custom number systems, bit packing, compact storage, and high-performance Roblox systems.
 
 It combines a simple `Writer` / `Reader` workflow with advanced integer widths, compact floats, VarInts, bit cursors, layouts, Roblox datatype codecs, compaction, Base64, and debugging utilities.
 
-> **Version:** `1.1.0`  
+> **Version:** `1.1.1`  
 > **API:** `1`  
 > **Runtime:** Roblox Luau
 
@@ -570,7 +579,7 @@ BufferUtil uses:
 --!optimize 2
 ```
 
-v1.1.0 introduced dedicated native Writer / Reader hot paths.
+v1.1.1 introduced dedicated native Writer / Reader hot paths.
 
 ### Actual-game benchmark
 
@@ -581,7 +590,7 @@ v1.1.0 introduced dedicated native Writer / Reader hot paths.
 Roblox game/client environment
 ```
 
-| Operation | v1.1.0 |
+| Operation | v1.1.1 |
 |---|---:|
 | Write U8 | ~66 ns/op |
 | Write I16 | ~65 ns/op |
