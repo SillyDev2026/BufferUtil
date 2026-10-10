@@ -3,7 +3,7 @@
 
 local BufferUtil = {}
 
-BufferUtil.VERSION = "1.1.0"
+BufferUtil.VERSION = "1.1.1"
 BufferUtil.API_VERSION = 1
 BufferUtil.COMPAT_API_VERSION = 1
 BufferUtil.PATCH_VERSION = 1
@@ -172,15 +172,18 @@ local BINARY_LOOKUP = table.create(256)
 local BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 local BASE64_ENCODE = table.create(64)
 local BASE64_DECODE: {[string]: number} = {}
+local BASE64_DECODE_BYTE: {[number]: number} = {}
 
 for index = 0, 63 do
 	local ch = string.sub(BASE64_ALPHABET, index + 1, index + 1)
 	BASE64_ENCODE[index + 1] = ch
 	BASE64_DECODE[ch] = index
+    BASE64_DECODE_BYTE[string.byte(BASE64_ALPHABET, index + 1)] = index
 end
 
 table.freeze(BASE64_ENCODE)
 table.freeze(BASE64_DECODE)
+table.freeze(BASE64_DECODE_BYTE)
 
 for value = 0, 255 do
 	HEX_LOOKUP[value + 1] = string.format("%02X", value)
@@ -2173,18 +2176,18 @@ function BufferUtil.fromBase64(value: string): buffer
 	local outputOffset = 0
 
 	for index = 1, #clean, 4 do
-		local c1 = string.sub(clean, index, index)
-		local c2 = string.sub(clean, index + 1, index + 1)
-		local c3 = string.sub(clean, index + 2, index + 2)
-		local c4 = string.sub(clean, index + 3, index + 3)
+        local c1 = string.byte(clean, index)
+        local c2 = string.byte(clean, index + 1)
+        local c3 = string.byte(clean, index + 2)
+        local c4 = string.byte(clean, index + 3)
 		local finalGroup = index + 3 == #clean
 
-		if c1 == "=" or c2 == "=" then
+		if c1 == 61 or c2 == 61 then
 			error("BufferUtil: invalid Base64 padding position", 2)
 		end
 
-		local pad3 = c3 == "="
-		local pad4 = c4 == "="
+		local pad3 = c3 == 61
+		local pad4 = c4 == 61
 
 		if pad3 and not pad4 then
 			error("BufferUtil: invalid Base64 padding; third '=' requires fourth '='", 2)
@@ -2193,10 +2196,10 @@ function BufferUtil.fromBase64(value: string): buffer
 			error("BufferUtil: Base64 padding is only valid in the final group", 2)
 		end
 
-		local a = BASE64_DECODE[c1]
-		local b = BASE64_DECODE[c2]
-		local c = if pad3 then 0 else BASE64_DECODE[c3]
-		local d = if pad4 then 0 else BASE64_DECODE[c4]
+        local a = BASE64_DECODE_BYTE[c1]
+        local b = BASE64_DECODE_BYTE[c2]
+        local c = if pad3 then 0 else BASE64_DECODE_BYTE[c3]
+        local d = if pad4 then 0 else BASE64_DECODE_BYTE[c4]
 
 		if a == nil or b == nil or c == nil or d == nil then
 			error("BufferUtil: invalid Base64 character", 2)
